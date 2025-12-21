@@ -1,5 +1,5 @@
 
-import { UserProfile, Product, Transaction, Purchase, StoreSettings, Customer, Supplier, CashShift, CashMovement, Lead, Store, PaymentMethod } from '../types';
+import { UserProfile, Product, Transaction, Purchase, StoreSettings, Customer, Supplier, CashShift, CashMovement, Lead, Store, PaymentMethod, PurchaseItem } from '../types';
 import { supabase } from './supabase';
 import { DEFAULT_SETTINGS } from '../constants';
 
@@ -64,7 +64,8 @@ export const StorageService = {
     return productsData.map((p: any) => ({ 
         id: p.id, name: p.name, price: Number(p.price), category: p.category, 
         stock: Number(p.stock), barcode: p.barcode, 
-        hasVariants: p.has_variants, 
+        has_variants: p.has_variants, 
+        hasVariants: p.has_variants,
         variants: Array.isArray(p.variants) ? p.variants : [], 
         images: imagesData ? imagesData.filter((img: any) => img.product_id === p.id).map((img: any) => img.image_data) : [], 
         cost: Number(p.cost || 0), 
@@ -217,7 +218,6 @@ export const StorageService = {
 
   savePurchase: async (p: Purchase) => {
     const storeId = await getStoreId();
-    // Mapeo riguroso a nombres de columna de la base de datos (snake_case)
     const dbPayload = {
         id: p.id, 
         reference: p.reference, 
@@ -239,14 +239,8 @@ export const StorageService = {
         received: p.received, 
         store_id: storeId
     };
-
     const { error } = await supabase.from('purchases').upsert(dbPayload);
-    
-    if (error) {
-        console.error("Supabase error detail:", JSON.stringify(error, null, 2));
-        // Lanzamos el mensaje real para evitar el [object Object]
-        throw new Error(error.message || `Error DB (${error.code})`);
-    }
+    if (error) throw new Error(error.message || `Error DB (${error.code})`);
   },
 
   confirmReceptionAndSyncStock: async (purchase: Purchase) => {
@@ -255,10 +249,36 @@ export const StorageService = {
         const { data: p } = await supabase.from('products').select('*').eq('id', item.productId).eq('store_id', storeId).maybeSingle();
         if (p) {
             let newStock = Number(p.stock) + item.quantity;
+            let variants = Array.isArray(p.variants) ? p.variants : [];
+            let currentPrice = p.price;
+
+            // Si es una variante, la actualizamos específicamente
+            if (item.variantId) {
+                const vIdx = variants.findIndex(v => v.id === item.variantId);
+                if (vIdx !== -1) {
+                    variants[vIdx].stock = (variants[vIdx].stock || 0) + item.quantity;
+                    variants[vIdx].price = item.newSellPrice || variants[vIdx].price;
+                } else if (item.variantName) {
+                    // Si no existe pero se definió en la compra (On-the-fly)
+                    variants.push({
+                        id: item.variantId,
+                        name: item.variantName,
+                        price: item.newSellPrice || p.price,
+                        stock: item.quantity
+                    });
+                }
+                // Si hay variantes, el stock total del producto es la suma de todas
+                newStock = variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+            } else {
+                currentPrice = item.newSellPrice || p.price;
+            }
+
             await supabase.from('products').update({ 
                 stock: newStock, 
                 cost: item.cost, 
-                price: item.newSellPrice || p.price 
+                price: currentPrice,
+                variants,
+                has_variants: variants.length > 0
             }).eq('id', p.id).eq('store_id', storeId);
         }
     }
@@ -270,8 +290,18 @@ export const StorageService = {
     for (const item of purchase.items) {
         const { data: p } = await supabase.from('products').select('*').eq('id', item.productId).eq('store_id', storeId).maybeSingle();
         if (p) {
+            let variants = Array.isArray(p.variants) ? p.variants : [];
             let newStock = Math.max(0, Number(p.stock) - item.quantity);
-            await supabase.from('products').update({ stock: newStock }).eq('id', p.id).eq('store_id', storeId);
+            
+            if (item.variantId) {
+                const vIdx = variants.findIndex(v => v.id === item.variantId);
+                if (vIdx !== -1) {
+                    variants[vIdx].stock = Math.max(0, (variants[vIdx].stock || 0) - item.quantity);
+                }
+                newStock = variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+            }
+            
+            await supabase.from('products').update({ stock: newStock, variants }).eq('id', p.id).eq('store_id', storeId);
         }
     }
     await supabase.from('purchases').update({ status: 'CONFIRMADO', received: 'NO' }).eq('id', purchase.id).eq('store_id', storeId);
@@ -322,7 +352,8 @@ export const StorageService = {
 
   saveSupplier: async (s: Supplier) => {
     const storeId = await getStoreId();
-    await supabase.from('suppliers').upsert({ ...s, store_id: storeId });
+    const { error } = await supabase.from('suppliers').upsert({ ...s, store_id: storeId });
+    if (error) throw error;
   },
 
   getSettings: async (): Promise<StoreSettings> => {

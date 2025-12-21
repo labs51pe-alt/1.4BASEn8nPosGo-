@@ -129,6 +129,8 @@ export interface Supplier {
 export interface PurchaseItem {
   productId: string;
   productName?: string; 
+  variantId?: string;     // Identificador de la variante
+  variantName?: string;   // Nombre descriptivo (ej: XL, 1L, etc)
   quantity: number;
   cost: number;
   isBonus?: boolean;
