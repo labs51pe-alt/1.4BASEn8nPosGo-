@@ -5,7 +5,8 @@ import {
     Wallet, History, Eye, XCircle, RotateCcw, Clock, 
     ShieldCheck, Smartphone, Zap, CreditCard, Banknote, 
     RefreshCw, AlertTriangle, ArrowRight, Check, FileSpreadsheet,
-    DollarSign, TrendingUp, Package, Users, Plus
+    DollarSign, TrendingUp, Package, Users, Plus, CheckCircle2,
+    X, ArrowUpRight, Receipt, Box
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -30,19 +31,29 @@ export const ShiftsView: React.FC<ShiftsViewProps> = ({
     const lowStockCount = useMemo(() => products.filter(p => p.stock < 10).length, [products]);
 
     const handleExportShift = (s: CashShift) => {
-        const data = transactions
-            .filter(t => t.shiftId === s.id)
-            .map(t => ({
-                Ticket: t.id.slice(-6).toUpperCase(),
-                Fecha: new Date(t.date).toLocaleString(),
-                Total: t.total,
-                Metodo: t.paymentMethod,
-                Status: t.status || 'COMPLETED'
-            }));
+        const shiftTrans = transactions.filter(t => t.shiftId === s.id);
+        const data = shiftTrans.flatMap(t => t.items.map(i => ({
+            Ticket: t.id.slice(-6).toUpperCase(),
+            Fecha: new Date(t.date).toLocaleString(),
+            Producto: i.name,
+            Cantidad: i.quantity,
+            Precio_Unit: i.price,
+            Total_Linea: i.price * i.quantity,
+            Metodo_Pago: t.paymentMethod,
+            Status: t.status || 'COMPLETED'
+        })));
+
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), "Turno");
-        XLSX.writeFile(wb, `Turno_${s.id.slice(-6)}.xlsx`);
+        const ws = XLSX.utils.json_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, "Detalle Turno");
+        XLSX.writeFile(wb, `Arqueo_Turno_${s.id.slice(-6)}.xlsx`);
     };
+
+    const shiftTransactions = useMemo(() => {
+        if (!selectedShift) return [];
+        return transactions.filter(t => t.shiftId === selectedShift.id)
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [selectedShift, transactions]);
 
     return (
         <div className="p-4 sm:p-8 h-full overflow-y-auto custom-scrollbar bg-[#f8fafc] pb-24 lg:pb-8">
@@ -139,56 +150,122 @@ export const ShiftsView: React.FC<ShiftsViewProps> = ({
                 </table>
             </div>
 
-            {/* MODAL DETALLE TURNO (AUDITORÍA) */}
+            {/* MODAL ARQUEO DE TURNO (AUDITORÍA MEJORADA) */}
             {selectedShift && (
-                <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[200] flex items-end sm:items-center justify-center sm:p-4">
-                    <div className="bg-white w-full max-w-5xl h-[92vh] sm:h-[85vh] rounded-t-[3rem] sm:rounded-[3rem] shadow-2xl flex flex-col overflow-hidden animate-fade-in-up">
-                        <div className="p-6 sm:p-8 border-b border-slate-100 bg-slate-900 text-white flex justify-between items-center shrink-0">
-                            <div className="flex items-center gap-4">
-                                <div className="hidden sm:flex w-12 h-12 bg-white/10 rounded-2xl items-center justify-center text-emerald-400"><ShieldCheck className="w-6 h-6"/></div>
+                <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[200] flex items-center justify-center p-4 sm:p-6">
+                    <div className="bg-white w-full max-w-6xl h-[92vh] sm:h-[85vh] rounded-[2.5rem] sm:rounded-[3rem] shadow-2xl flex flex-col overflow-hidden animate-fade-in-up border border-white/20">
+                        
+                        {/* Header Profesional (Estilo Imagen) */}
+                        <div className="p-6 sm:p-8 border-b border-white/5 bg-[#0f172a] text-white flex justify-between items-center shrink-0">
+                            <div className="flex items-center gap-5">
+                                <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center text-emerald-400 shadow-inner">
+                                    <CheckCircle2 className="w-6 h-6"/>
+                                </div>
                                 <div>
-                                    <h2 className="text-xl font-black tracking-tight leading-none mb-1">Arqueo de Turno #{selectedShift.id.slice(-6).toUpperCase()}</h2>
-                                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">{new Date(selectedShift.startTime).toLocaleString()}</p>
+                                    <h2 className="text-xl sm:text-2xl font-black tracking-tight leading-none mb-1.5">Arqueo de Turno #{selectedShift.id.slice(-6).toUpperCase()}</h2>
+                                    <p className="text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest">{new Date(selectedShift.startTime).toLocaleString()}</p>
                                 </div>
                             </div>
-                            <button onClick={() => setSelectedShift(null)} className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all"><XCircle className="w-6 h-6"/></button>
+                            <button onClick={() => setSelectedShift(null)} className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all group">
+                                <X className="w-6 h-6 text-white group-hover:rotate-90 transition-transform"/>
+                            </button>
                         </div>
-                        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row bg-slate-50">
-                             <div className="w-full lg:w-80 p-6 sm:p-8 bg-white lg:border-r border-slate-200 lg:order-2 flex flex-col">
-                                 <h4 className="font-black text-slate-800 uppercase text-[10px] tracking-widest mb-6 flex items-center gap-2"><Wallet className="w-4 h-4 text-emerald-500"/> Resumen de Caja</h4>
-                                 <div className="space-y-3 flex-1">
-                                     <div className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center">
-                                         <div><p className="text-[8px] font-black text-slate-400 uppercase">Efectivo</p><p className="font-black text-lg text-emerald-600">S/{selectedShift.totalSalesCash.toFixed(2)}</p></div>
-                                         <Banknote className="w-6 h-6 text-emerald-200"/>
-                                     </div>
-                                     <div className="p-4 bg-slate-50 rounded-2xl flex justify-between items-center">
-                                         <div><p className="text-[8px] font-black text-slate-400 uppercase">Digital</p><p className="font-black text-lg text-indigo-600">S/{selectedShift.totalSalesDigital.toFixed(2)}</p></div>
-                                         <Smartphone className="w-6 h-6 text-indigo-200"/>
-                                     </div>
-                                     <div className="pt-4 border-t border-slate-100">
-                                         <p className="text-[8px] font-black text-slate-400 uppercase text-center mb-1">Monto Total</p>
-                                         <p className="text-3xl font-black text-slate-900 text-center tracking-tighter">S/{(selectedShift.totalSalesCash + selectedShift.totalSalesDigital).toFixed(2)}</p>
-                                     </div>
+
+                        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row bg-[#f8fafc]">
+                             
+                             {/* Columna Izquierda: Transacciones con Detalles */}
+                             <div className="flex-1 flex flex-col overflow-hidden">
+                                 <div className="p-6 border-b border-slate-100 flex items-center gap-3 bg-white">
+                                     <History className="w-5 h-5 text-indigo-500"/>
+                                     <h4 className="font-black text-slate-800 uppercase text-[10px] sm:text-xs tracking-widest">Transacciones del Turno</h4>
+                                     <span className="bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-lg text-[10px] font-black ml-auto">{shiftTransactions.length} Operaciones</span>
                                  </div>
-                                 <button onClick={() => handleExportShift(selectedShift)} className="w-full mt-6 py-4 bg-emerald-500 text-white rounded-xl font-black text-xs uppercase items-center justify-center gap-2 shadow-lg shadow-emerald-100 hover:bg-emerald-600 transition-all active:scale-95">
-                                     <FileSpreadsheet className="w-4 h-4"/> Exportar Excel
-                                 </button>
-                             </div>
-                             <div className="flex-1 flex flex-col lg:order-1 overflow-hidden">
-                                 <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white">
-                                     <h4 className="font-black text-slate-800 uppercase text-[10px] tracking-widest flex items-center gap-2"><History className="w-4 h-4 text-indigo-500"/> Transacciones del Turno</h4>
-                                 </div>
-                                 <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 custom-scrollbar">
-                                     {transactions.filter(t => t.shiftId === selectedShift.id).map(t => (
-                                         <div key={t.id} className="bg-white rounded-2xl p-4 border border-slate-100 flex justify-between items-center shadow-sm">
-                                             <div>
-                                                 <p className="font-black text-slate-800 text-xs">Tkt #{t.id.slice(-6).toUpperCase()} • {new Date(t.date).toLocaleTimeString()}</p>
-                                                 <p className="text-[10px] text-slate-400 font-bold uppercase">{t.paymentMethod}</p>
+                                 <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-4 custom-scrollbar">
+                                     {shiftTransactions.map(t => (
+                                         <div key={t.id} className={`bg-white rounded-3xl p-5 border border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm hover:shadow-md transition-all ${t.status === 'CANCELED' ? 'opacity-40 grayscale' : ''}`}>
+                                             <div className="flex-1 min-w-0 pr-4">
+                                                 <div className="flex items-center gap-3 mb-2">
+                                                     <p className="font-black text-slate-800 text-sm">Tkt #{t.id.slice(-6).toUpperCase()}</p>
+                                                     <span className="text-slate-300">•</span>
+                                                     <p className="text-[10px] font-bold text-slate-400">{new Date(t.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                                                 </div>
+                                                 <div className="flex flex-wrap gap-1.5">
+                                                     {t.items.map((item, idx) => (
+                                                         <span key={idx} className="bg-slate-50 text-[9px] font-bold text-slate-500 px-2 py-1 rounded-lg border border-slate-100 flex items-center gap-1.5 whitespace-nowrap">
+                                                             <Box className="w-2.5 h-2.5 opacity-50"/>
+                                                             {item.quantity}x {item.name}
+                                                         </span>
+                                                     ))}
+                                                 </div>
                                              </div>
-                                             <p className="font-black text-sm text-slate-900">S/{t.total.toFixed(2)}</p>
+                                             <div className="flex flex-col items-end shrink-0">
+                                                 <p className="font-black text-lg text-slate-900 leading-none mb-1">{settings.currency}{t.total.toFixed(2)}</p>
+                                                 <div className="flex items-center gap-2">
+                                                     {t.paymentMethod === 'cash' ? <Banknote className="w-3 h-3 text-emerald-500"/> : <Smartphone className="w-3 h-3 text-indigo-500"/>}
+                                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">{t.paymentMethod}</span>
+                                                 </div>
+                                             </div>
                                          </div>
                                      ))}
+                                     {shiftTransactions.length === 0 && (
+                                         <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-30 pt-20">
+                                             <Receipt className="w-20 h-20 mb-4"/>
+                                             <p className="text-xl font-black uppercase tracking-widest">Sin Ventas</p>
+                                         </div>
+                                     )}
                                  </div>
+                             </div>
+
+                             {/* Columna Derecha: Sidebar Resumen (Estilo Imagen) */}
+                             <div className="w-full lg:w-[350px] p-6 sm:p-8 bg-white border-l border-slate-100 flex flex-col shadow-[inset_10px_0_40px_rgba(0,0,0,0.01)]">
+                                 <div className="flex items-center gap-3 mb-8">
+                                     <Wallet className="w-5 h-5 text-emerald-500"/>
+                                     <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">Resumen de Caja</h4>
+                                 </div>
+
+                                 <div className="space-y-4 flex-1">
+                                     {/* Card Efectivo */}
+                                     <div className="p-6 bg-[#f8fafc] rounded-[2rem] border border-slate-100 flex justify-between items-center relative overflow-hidden group">
+                                         <div className="absolute right-0 bottom-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Banknote className="w-16 h-16"/></div>
+                                         <div className="relative z-10">
+                                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">EFECTIVO</p>
+                                             <p className="text-2xl font-black text-emerald-600 tracking-tighter">{settings.currency}{selectedShift.totalSalesCash.toFixed(2)}</p>
+                                         </div>
+                                         <div className="p-3 bg-white rounded-xl shadow-sm"><Banknote className="w-5 h-5 text-emerald-400"/></div>
+                                     </div>
+
+                                     {/* Card Digital */}
+                                     <div className="p-6 bg-[#f8fafc] rounded-[2rem] border border-slate-100 flex justify-between items-center relative overflow-hidden group">
+                                         <div className="absolute right-0 bottom-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Smartphone className="w-16 h-16"/></div>
+                                         <div className="relative z-10">
+                                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">DIGITAL</p>
+                                             <p className="text-2xl font-black text-indigo-600 tracking-tighter">{settings.currency}{selectedShift.totalSalesDigital.toFixed(2)}</p>
+                                         </div>
+                                         <div className="p-3 bg-white rounded-xl shadow-sm"><Smartphone className="w-5 h-5 text-indigo-400"/></div>
+                                     </div>
+
+                                     {/* Card Total */}
+                                     <div className="pt-10 pb-6 text-center">
+                                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">MONTO TOTAL</p>
+                                         <p className="text-6xl font-black text-slate-900 tracking-tighter leading-none mb-1">
+                                             {settings.currency}{(selectedShift.totalSalesCash + selectedShift.totalSalesDigital).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                         </p>
+                                         <div className="flex items-center justify-center gap-2 text-slate-300">
+                                             <div className="w-8 h-px bg-slate-200"></div>
+                                             <span className="text-[9px] font-bold">POSGO AUDIT</span>
+                                             <div className="w-8 h-px bg-slate-200"></div>
+                                         </div>
+                                     </div>
+                                 </div>
+
+                                 {/* Botón Exportar Mejorado */}
+                                 <button 
+                                     onClick={() => handleExportShift(selectedShift)} 
+                                     className="w-full mt-6 py-5 bg-gradient-to-r from-[#00d68f] to-[#00b87a] text-white rounded-3xl font-black text-xs uppercase tracking-widest items-center justify-center gap-3 shadow-xl shadow-emerald-200 hover:scale-[1.02] transition-all active:scale-95 flex"
+                                 >
+                                     <FileSpreadsheet className="w-5 h-5"/>
+                                     EXPORTAR EXCEL
+                                 </button>
                              </div>
                         </div>
                     </div>
