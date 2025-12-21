@@ -214,13 +214,21 @@ const App: React.FC = () => {
           shiftId: activeShift.id 
       };
 
+      // Cálculo preciso por método para el turno
       const cashInThisSale = payments.filter(p => p.method === 'cash').reduce((sum, p) => sum + p.amount, 0);
-      const digitalInThisSale = payments.filter(p => p.method !== 'cash').reduce((sum, p) => sum + p.amount, 0);
+      const yapeInThisSale = payments.filter(p => p.method === 'yape').reduce((sum, p) => sum + p.amount, 0);
+      const plinInThisSale = payments.filter(p => p.method === 'plin').reduce((sum, p) => sum + p.amount, 0);
+      const cardInThisSale = payments.filter(p => p.method === 'card').reduce((sum, p) => sum + p.amount, 0);
+      
+      const digitalInThisSale = yapeInThisSale + plinInThisSale + cardInThisSale;
 
       const updatedShift: CashShift = {
           ...activeShift,
           totalSalesCash: (activeShift.totalSalesCash || 0) + cashInThisSale,
-          totalSalesDigital: (activeShift.totalSalesDigital || 0) + digitalInThisSale
+          totalSalesDigital: (activeShift.totalSalesDigital || 0) + digitalInThisSale,
+          totalSalesYape: (activeShift.totalSalesYape || 0) + yapeInThisSale,
+          totalSalesPlin: (activeShift.totalSalesPlin || 0) + plinInThisSale,
+          totalSalesCard: (activeShift.totalSalesCard || 0) + cardInThisSale
       };
 
       setTicketType('SALE'); 

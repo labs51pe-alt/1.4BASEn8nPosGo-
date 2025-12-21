@@ -16,14 +16,14 @@ export const CashControlModal = ({ isOpen, onClose, activeShift, movements, tran
   }, [isOpen, activeShift]);
 
   const totals = useMemo(() => {
-    if (!activeShift) return { cash: 0, digital: 0, start: 0, salesCash: 0, yape: 0, plin: 0, card: 0, totalInCaja: 0 };
+    if (!activeShift) return { cash: 0, digital: 0, start: 0, salesCash: 0, yape: 0, plin: 0, card: 0, totalInCaja: 0, mainDigitalMethod: 'Digitales' };
     
     const start = Number(activeShift.startAmount || 0);
     const salesCash = Number(activeShift.totalSalesCash || 0);
     const salesDigital = Number(activeShift.totalSalesDigital || 0);
-    const salesYape = Number(activeShift.totalSalesYape || 0);
-    const salesPlin = Number(activeShift.totalSalesPlin || 0);
-    const salesCard = Number(activeShift.totalSalesCard || 0);
+    const yape = Number(activeShift.totalSalesYape || 0);
+    const plin = Number(activeShift.totalSalesPlin || 0);
+    const card = Number(activeShift.totalSalesCard || 0);
 
     const shiftMoves = movements.filter((m: any) => m.shiftId === activeShift.id);
     let manualMovesNet = 0;
@@ -34,15 +34,24 @@ export const CashControlModal = ({ isOpen, onClose, activeShift, movements, tran
 
     const expectedPhysicalCash = start + salesCash + manualMovesNet;
 
+    // Determinar el nombre dinámico para la tarjeta azul
+    let mainDigitalMethod = 'Digitales';
+    if (salesDigital > 0) {
+        if (yape === salesDigital) mainDigitalMethod = 'Yape';
+        else if (plin === salesDigital) mainDigitalMethod = 'Plin';
+        else if (card === salesDigital) mainDigitalMethod = 'Tarjeta';
+    }
+
     return { 
         cash: expectedPhysicalCash, 
         digital: salesDigital, 
         start,
         salesCash,
-        yape: salesYape,
-        plin: salesPlin,
-        card: salesCard,
-        totalInCaja: expectedPhysicalCash + salesDigital
+        yape,
+        plin,
+        card,
+        totalInCaja: expectedPhysicalCash + salesDigital,
+        mainDigitalMethod
     };
   }, [activeShift, movements]);
 
@@ -91,32 +100,32 @@ export const CashControlModal = ({ isOpen, onClose, activeShift, movements, tran
                             </div>
                             <div className="bg-indigo-600 p-4 sm:p-5 rounded-[2rem] text-white flex flex-col justify-center shadow-xl shadow-indigo-100 relative overflow-hidden group">
                                 <div className="absolute right-[-10px] bottom-[-10px] opacity-20"><Smartphone className="w-16 h-16 sm:w-20 sm:h-20"/></div>
-                                <p className="text-[9px] font-black uppercase mb-1 tracking-widest opacity-80">Ventas Digitales</p>
+                                <p className="text-[9px] font-black uppercase mb-1 tracking-widest opacity-80">Ventas {totals.mainDigitalMethod}</p>
                                 <h3 className="text-xl sm:text-2xl font-black tracking-tighter">{currency}{totals.digital.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</h3>
                             </div>
                         </div>
 
                         {/* Desglose Detallado de Ventas Digitales */}
                         <div className="grid grid-cols-3 gap-2">
-                             <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 text-center">
-                                 <div className="w-7 h-7 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600 mx-auto mb-1"><Smartphone className="w-3.5 h-3.5"/></div>
+                             <div className={`p-2.5 rounded-2xl border transition-all text-center ${totals.yape > 0 ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto mb-1 ${totals.yape > 0 ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-400'}`}><Smartphone className="w-3.5 h-3.5"/></div>
                                  <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">YAPE</p>
-                                 <p className="font-black text-slate-800 text-[10px]">{currency}{totals.yape.toFixed(2)}</p>
+                                 <p className={`font-black text-[10px] ${totals.yape > 0 ? 'text-purple-700' : 'text-slate-400'}`}>{currency}{totals.yape.toFixed(2)}</p>
                              </div>
-                             <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 text-center">
-                                 <div className="w-7 h-7 bg-cyan-100 rounded-lg flex items-center justify-center text-cyan-600 mx-auto mb-1"><Zap className="w-3.5 h-3.5 fill-current"/></div>
+                             <div className={`p-2.5 rounded-2xl border transition-all text-center ${totals.plin > 0 ? 'bg-cyan-50 border-cyan-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto mb-1 ${totals.plin > 0 ? 'bg-cyan-100 text-cyan-600' : 'bg-slate-100 text-slate-400'}`}><Zap className="w-3.5 h-3.5 fill-current"/></div>
                                  <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">PLIN</p>
-                                 <p className="font-black text-slate-800 text-[10px]">{currency}{totals.plin.toFixed(2)}</p>
+                                 <p className={`font-black text-[10px] ${totals.plin > 0 ? 'text-cyan-700' : 'text-slate-400'}`}>{currency}{totals.plin.toFixed(2)}</p>
                              </div>
-                             <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 text-center">
-                                 <div className="w-7 h-7 bg-slate-200 rounded-lg flex items-center justify-center text-slate-600 mx-auto mb-1"><CreditCard className="w-3.5 h-3.5"/></div>
+                             <div className={`p-2.5 rounded-2xl border transition-all text-center ${totals.card > 0 ? 'bg-slate-100 border-slate-300' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto mb-1 ${totals.card > 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}><CreditCard className="w-3.5 h-3.5"/></div>
                                  <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">CARD</p>
-                                 <p className="font-black text-slate-800 text-[10px]">{currency}{totals.card.toFixed(2)}</p>
+                                 <p className={`font-black text-[10px] ${totals.card > 0 ? 'text-slate-900' : 'text-slate-400'}`}>{currency}{totals.card.toFixed(2)}</p>
                              </div>
                         </div>
 
                         {/* Resumen Informativo */}
-                        <div className="bg-slate-50 rounded-3xl p-4 border border-slate-100 space-y-3">
+                        <div className="bg-slate-50 rounded-3xl p-4 border border-slate-100 space-y-3 shadow-inner">
                             <div className="flex justify-between items-center pb-2 border-b border-slate-200/50">
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Fondo Inicial</span>
                                 <span className="font-black text-slate-700 text-xs">{currency}{totals.start.toFixed(2)}</span>
