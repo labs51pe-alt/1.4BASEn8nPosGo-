@@ -16,7 +16,8 @@ import {
     ChevronLeft, BarChart3, ShoppingBag, ArrowRight,
     History, ChevronDown, Hash, ScanBarcode, PlusCircle,
     ArrowDownCircle, Scale, Minus, User, UserPlus2,
-    ChevronUp, Zap, CreditCard as CardIcon
+    ChevronUp, Zap, CreditCard as CardIcon,
+    PieChart, Receipt, TrendingUp
 } from 'lucide-react';
 
 interface PurchasesViewProps {
@@ -34,12 +35,14 @@ interface PurchasesViewProps {
 }
 
 type SupplierModalView = 'LIST' | 'HISTORY' | 'CREATE';
+type QuickFilter = 'ALL' | 'PENDING_PAY' | 'PENDING_RECEIVE' | 'MONTH';
 
 export const PurchasesView: React.FC<PurchasesViewProps> = ({ 
     products, suppliers, purchases = [], onProcessPurchase, onConfirmReception, onRevertReception, onAddSupplier, 
     onRequestNewProduct, settings, initialSearchTerm 
 }) => {
     const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
+    const [quickFilter, setQuickFilter] = useState<QuickFilter>('ALL');
     const [isModalOpen, setIsModalOpen] = useState(false);
     
     // Suppliers UI State
@@ -102,14 +105,45 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({
         return { subtotal: taxIncluded ? subtotalRaw - tax : subtotalRaw, tax, total };
     }, [items, taxIncluded, settings.taxRate]);
 
-    // Define isFullyPaid to fix errors at line 346 and 437
     const isFullyPaid = useMemo(() => {
         if (condition === 'CONTADO') return true;
         const paid = parseFloat(amountPaid) || 0;
         return paid >= (totals.total - 0.01);
     }, [condition, amountPaid, totals.total]);
 
-    // Helpers para cálculos rápidos en tarjeta
+    // --- CÁLCULOS DE CABECERA (KPIs) ---
+    const kpiStats = useMemo(() => {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        
+        let totalAllTime = 0;
+        let totalMonth = 0;
+        let accountsPayable = 0;
+
+        purchases.forEach(p => {
+            if (p.status === 'CANCELADO') return;
+            totalAllTime += p.total;
+            
+            // Filtro Mes Actual
+            if (new Date(p.date) >= startOfMonth) {
+                totalMonth += p.total;
+            }
+
+            // Cuentas por Pagar (Saldo pendiente)
+            const pending = Math.max(0, p.total - (p.amountPaid || 0));
+            if (pending > 0.01) {
+                accountsPayable += pending;
+            }
+        });
+
+        return {
+            count: purchases.length,
+            totalAllTime,
+            totalMonth,
+            accountsPayable
+        };
+    }, [purchases]);
+
     const getBalanceInfo = (p: Purchase) => {
         const paid = Number(p.amountPaid || 0);
         const total = Number(p.total || 0);
@@ -117,6 +151,26 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({
         const percent = total > 0 ? (paid / total) * 100 : 0;
         return { paid, pending, percent };
     };
+
+    // --- LISTADO FILTRADO ---
+    const filteredPurchases = useMemo(() => {
+        return purchases.filter(p => {
+            const supName = suppliers.find(s => s.id === p.supplierId)?.name || '';
+            const matchesSearch = supName.toLowerCase().includes(searchTerm.toLowerCase()) || p.reference.toLowerCase().includes(searchTerm.toLowerCase());
+            
+            if (!matchesSearch) return false;
+
+            if (quickFilter === 'PENDING_PAY') return (p.total - (p.amountPaid || 0)) > 0.01;
+            if (quickFilter === 'PENDING_RECEIVE') return p.received === 'NO' && p.status !== 'CANCELADO';
+            if (quickFilter === 'MONTH') {
+                const now = new Date();
+                const d = new Date(p.date);
+                return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+            }
+            
+            return true;
+        });
+    }, [purchases, searchTerm, quickFilter, suppliers]);
 
     const handleAddSup = async () => {
         if (!newSup.name) return;
@@ -182,14 +236,14 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({
 
     return (
         <div className="h-full flex flex-col bg-[#f8fafc] overflow-hidden pb-24 lg:pb-8 font-sans">
-            {/* CABECERA COMPRAS */}
+            {/* CABECERA PRINCIPAL */}
             <div className="bg-white border-b border-slate-200 px-6 py-4 shrink-0 shadow-sm z-10">
                 <div className="flex justify-between items-center gap-4">
                     <div>
                         <h1 className="text-2xl sm:text-3xl font-black text-slate-800 flex items-center gap-2 tracking-tight">
                             <Truck className="w-6 h-6 text-indigo-600"/> Mis Compras
                         </h1>
-                        <p className="hidden sm:block text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mt-1">Gestión de Proveedores y Stock</p>
+                        <p className="hidden sm:block text-slate-400 text-[10px] font-black uppercase tracking-[0.2em] mt-1">Suministros y Logística</p>
                     </div>
                     <div className="flex gap-2">
                         <button onClick={() => { setSupModalView('LIST'); setIsSuppliersModalOpen(true); }} className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition-all shadow-sm">
@@ -202,88 +256,149 @@ export const PurchasesView: React.FC<PurchasesViewProps> = ({
                 </div>
             </div>
 
-            {/* BÚSQUEDA ORDENES */}
-            <div className="px-6 py-3 bg-slate-50/50 border-b border-slate-100 flex gap-4 items-center">
-                <div className="flex-1 relative">
+            {/* CAJAS DE MÉTRICAS INTERACTIVAS (KPIs) */}
+            <div className="px-6 pt-6 pb-2 shrink-0">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Caja 1: Total Registradas */}
+                    <div 
+                        onClick={() => setQuickFilter('ALL')}
+                        className={`bg-white p-5 rounded-[2rem] shadow-sm border cursor-pointer transition-all hover:-translate-y-1 ${quickFilter === 'ALL' ? 'border-indigo-500 ring-4 ring-indigo-50' : 'border-slate-100 hover:border-indigo-200'}`}
+                    >
+                        <div className="flex justify-between items-start mb-3">
+                            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl"><History className="w-4 h-4"/></div>
+                            {quickFilter === 'ALL' && <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>}
+                        </div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Órdenes Totales</p>
+                        <h3 className="text-xl sm:text-2xl font-black text-slate-800 leading-none">{kpiStats.count} <span className="text-xs text-slate-300">reg.</span></h3>
+                    </div>
+
+                    {/* Caja 2: Gasto Total */}
+                    <div className="bg-white p-5 rounded-[2rem] shadow-sm border border-slate-100 relative overflow-hidden group">
+                        <div className="absolute right-[-10px] bottom-[-10px] opacity-5 group-hover:scale-110 transition-transform"><TrendingUp className="w-20 h-20"/></div>
+                        <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl w-fit mb-3"><Banknote className="w-4 h-4"/></div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Inversión Global</p>
+                        <h3 className="text-xl sm:text-2xl font-black text-slate-800 leading-none">{settings.currency}{kpiStats.totalAllTime.toLocaleString()}</h3>
+                    </div>
+
+                    {/* Caja 3: Gasto Mes Actual */}
+                    <div 
+                        onClick={() => setQuickFilter('MONTH')}
+                        className={`bg-white p-5 rounded-[2rem] shadow-sm border cursor-pointer transition-all hover:-translate-y-1 ${quickFilter === 'MONTH' ? 'border-violet-500 ring-4 ring-violet-50' : 'border-slate-100 hover:border-violet-200'}`}
+                    >
+                        <div className="flex justify-between items-start mb-3">
+                            <div className="p-2.5 bg-violet-50 text-violet-600 rounded-xl"><Calendar className="w-4 h-4"/></div>
+                            {quickFilter === 'MONTH' && <div className="w-2 h-2 rounded-full bg-violet-500 animate-pulse"></div>}
+                        </div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Este Mes</p>
+                        <h3 className="text-xl sm:text-2xl font-black text-slate-800 leading-none">{settings.currency}{kpiStats.totalMonth.toLocaleString()}</h3>
+                    </div>
+
+                    {/* Caja 4: Cuentas x Pagar */}
+                    <div 
+                        onClick={() => setQuickFilter('PENDING_PAY')}
+                        className={`bg-white p-5 rounded-[2rem] shadow-sm border cursor-pointer transition-all hover:-translate-y-1 ${quickFilter === 'PENDING_PAY' ? 'border-rose-500 ring-4 ring-rose-50' : 'border-slate-100 hover:border-rose-200'}`}
+                    >
+                        <div className="flex justify-between items-start mb-3">
+                            <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl"><Receipt className="w-4 h-4"/></div>
+                            <span className="bg-rose-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded uppercase">Deuda</span>
+                        </div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Cuentas x Pagar</p>
+                        <h3 className="text-xl sm:text-2xl font-black text-rose-600 leading-none">{settings.currency}{kpiStats.accountsPayable.toLocaleString()}</h3>
+                    </div>
+                </div>
+            </div>
+
+            {/* BÚSQUEDA Y FILTRO RÁPIDO */}
+            <div className="px-6 py-4 flex flex-col sm:flex-row gap-4 items-center shrink-0">
+                <div className="flex-1 relative w-full">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 w-4 h-4" />
-                    <input className="w-full pl-11 pr-4 py-3.5 bg-white border-2 border-transparent rounded-[1.5rem] font-bold outline-none focus:border-indigo-400 shadow-sm text-sm" placeholder="Filtrar órdenes por ref. o proveedor..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                    <input className="w-full pl-11 pr-4 py-3.5 bg-white border-2 border-slate-100 rounded-[1.5rem] font-bold outline-none focus:border-indigo-400 shadow-sm text-sm" placeholder="Buscar por referencia o proveedor..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                    {quickFilter !== 'ALL' && (
+                        <button onClick={() => setQuickFilter('ALL')} className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] font-black bg-slate-100 text-slate-400 px-2 py-1 rounded-lg hover:bg-slate-200">Limpiar Filtro</button>
+                    )}
+                </div>
+                <div className="flex gap-2 w-full sm:w-auto overflow-x-auto no-scrollbar pb-1">
+                    <button onClick={() => setQuickFilter('PENDING_RECEIVE')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap border-2 transition-all ${quickFilter === 'PENDING_RECEIVE' ? 'bg-amber-500 text-white border-amber-500 shadow-lg' : 'bg-white text-slate-400 border-slate-100'}`}>📦 Por Recibir</button>
                 </div>
             </div>
 
             {/* LISTADO KANBAN CON BALANCE INTEGRADO */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
-                    {purchases.filter(p => {
-                        const supName = suppliers.find(s => s.id === p.supplierId)?.name || '';
-                        return supName.toLowerCase().includes(searchTerm.toLowerCase()) || p.reference.toLowerCase().includes(searchTerm.toLowerCase());
-                    }).map(p => {
-                        const { paid, pending, percent } = getBalanceInfo(p);
-                        const isPaid = paid >= p.total - 0.01;
-                        const isPartial = !isPaid && paid > 0;
-                        
-                        return (
-                            <div key={p.id} onClick={() => openEdit(p)} className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all cursor-pointer group animate-fade-in-up relative overflow-hidden flex flex-col h-[420px]">
-                                {/* Estado Almacén (Chip) */}
-                                <div className="absolute top-4 left-4 z-20">
-                                    <div className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase flex items-center gap-1.5 border shadow-sm ${p.received === 'YES' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
-                                        {p.received === 'YES' ? '✅ EN STOCK' : '📦 POR RECIBIR'}
+                {filteredPurchases.length === 0 ? (
+                    <div className="h-64 flex flex-col items-center justify-center text-slate-300 opacity-20">
+                        <ShoppingBag className="w-24 h-24 mb-4"/>
+                        <p className="text-xl font-black uppercase">No se hallaron resultados</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+                        {filteredPurchases.map(p => {
+                            const { paid, pending, percent } = getBalanceInfo(p);
+                            const isPaid = paid >= p.total - 0.01;
+                            const isPartial = !isPaid && paid > 0;
+                            
+                            return (
+                                <div key={p.id} onClick={() => openEdit(p)} className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl transition-all cursor-pointer group animate-fade-in-up relative overflow-hidden flex flex-col h-[420px]">
+                                    {/* Estado Almacén (Chip) */}
+                                    <div className="absolute top-4 left-4 z-20">
+                                        <div className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase flex items-center gap-1.5 border shadow-sm ${p.received === 'YES' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                                            {p.received === 'YES' ? '✅ EN STOCK' : '📦 POR RECIBIR'}
+                                        </div>
                                     </div>
-                                </div>
 
-                                {/* Ribbon de Estado Pago */}
-                                <div className="absolute top-0 right-0 w-32 h-32 overflow-hidden pointer-events-none z-20">
-                                    <div className={`absolute top-0 right-0 py-1.5 px-10 transform rotate-45 translate-x-10 translate-y-4 shadow-lg text-[9px] font-black text-center text-white w-full uppercase tracking-widest ${isPaid ? 'bg-emerald-500' : isPartial ? 'bg-indigo-500' : 'bg-rose-500'}`}>
-                                        {isPaid ? '✅ PAGADO' : isPartial ? '⏳ PARCIAL' : '💰 PENDIENTE'}
+                                    {/* Ribbon de Estado Pago */}
+                                    <div className="absolute top-0 right-0 w-32 h-32 overflow-hidden pointer-events-none z-20">
+                                        <div className={`absolute top-0 right-0 py-1.5 px-10 transform rotate-45 translate-x-10 translate-y-4 shadow-lg text-[9px] font-black text-center text-white w-full uppercase tracking-widest ${isPaid ? 'bg-emerald-500' : isPartial ? 'bg-indigo-500' : 'bg-rose-500'}`}>
+                                            {isPaid ? '✅ PAGADO' : isPartial ? '⏳ PARCIAL' : '💰 PENDIENTE'}
+                                        </div>
                                     </div>
-                                </div>
-                                
-                                <div className="p-7 pt-12 flex-1">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">#{p.reference}</span>
-                                    <h3 className="font-black text-slate-800 text-lg leading-tight truncate pr-14 mb-1">{suppliers.find(s => s.id === p.supplierId)?.name || 'Proveedor'}</h3>
-                                    <p className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5 mb-6"><Calendar className="w-3 h-3"/> {new Date(p.date).toLocaleDateString()}</p>
                                     
-                                    {/* BALANCE FINANCIERO INTEGRADO (Image Request) */}
-                                    <div className="bg-slate-900 rounded-[1.8rem] p-5 text-white shadow-xl relative overflow-hidden mb-6">
-                                        <div className="absolute top-0 right-0 p-4 opacity-5"><Banknote className="w-16 h-16"/></div>
-                                        <p className="text-[8px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-3">Balance Financiero</p>
-                                        <div className="flex justify-between items-end mb-3">
-                                            <div>
-                                                <p className="text-xl font-black tracking-tighter">S/{paid.toFixed(2)}</p>
-                                                <p className="text-[7px] font-bold text-slate-500 uppercase">ABONADO</p>
+                                    <div className="p-7 pt-12 flex-1">
+                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">#{p.reference}</span>
+                                        <h3 className="font-black text-slate-800 text-lg leading-tight truncate pr-14 mb-1">{suppliers.find(s => s.id === p.supplierId)?.name || 'Proveedor'}</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold flex items-center gap-1.5 mb-6"><Calendar className="w-3 h-3"/> {new Date(p.date).toLocaleDateString()}</p>
+                                        
+                                        {/* BALANCE FINANCIERO INTEGRADO */}
+                                        <div className="bg-slate-900 rounded-[1.8rem] p-5 text-white shadow-xl relative overflow-hidden mb-6">
+                                            <div className="absolute top-0 right-0 p-4 opacity-5"><Banknote className="w-16 h-16"/></div>
+                                            <p className="text-[8px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-3">Balance Financiero</p>
+                                            <div className="flex justify-between items-end mb-3">
+                                                <div>
+                                                    <p className="text-xl font-black tracking-tighter">S/{paid.toFixed(2)}</p>
+                                                    <p className="text-[7px] font-bold text-slate-500 uppercase">ABONADO</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xl font-black tracking-tighter text-rose-400">S/{pending.toFixed(2)}</p>
+                                                    <p className="text-[7px] font-bold text-slate-500 uppercase">PENDIENTE</p>
+                                                </div>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-xl font-black tracking-tighter text-rose-400">S/{pending.toFixed(2)}</p>
-                                                <p className="text-[7px] font-bold text-slate-500 uppercase">PENDIENTE</p>
+                                            <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                                <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${percent}%` }}></div>
                                             </div>
+                                            <p className="text-[7px] font-black text-center mt-2 text-slate-500 uppercase tracking-widest">{percent.toFixed(0)}% DEL TOTAL CUBIERTO</p>
                                         </div>
-                                        {/* Barra de progreso */}
-                                        <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                            <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${percent}%` }}></div>
-                                        </div>
-                                        <p className="text-[7px] font-black text-center mt-2 text-slate-500 uppercase tracking-widest">{percent.toFixed(0)}% DEL TOTAL CUBIERTO</p>
-                                    </div>
 
-                                    <div className="flex justify-between items-center px-2">
-                                        <div><p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">Inversión Total</p><p className="text-lg font-black text-slate-900">{settings.currency}{p.total.toFixed(2)}</p></div>
-                                        <div className="text-right"><p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">Artículos</p><p className="text-sm font-black text-slate-600">{p.items.length} un.</p></div>
+                                        <div className="flex justify-between items-center px-2">
+                                            <div><p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">Inversión Total</p><p className="text-lg font-black text-slate-900">{settings.currency}{p.total.toFixed(2)}</p></div>
+                                            <div className="text-right"><p className="text-[8px] font-black text-slate-400 uppercase mb-0.5">Artículos</p><p className="text-sm font-black text-slate-600">{p.items.length} un.</p></div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="p-6 pt-0 mt-auto">
+                                         {p.received === 'NO' && p.status !== 'CANCELADO' ? (
+                                            <button onClick={(e) => { e.stopPropagation(); onConfirmReception(p); }} className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:scale-[1.02] transition-all shadow-lg shadow-emerald-100">
+                                                <Package className="w-4 h-4"/> CARGAR STOCK
+                                            </button>
+                                         ) : (
+                                            <div className="w-full py-4 bg-slate-50 text-slate-400 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 border border-slate-100 cursor-default">
+                                                <ShieldCheck className="w-4 h-4 text-emerald-500"/> MERCADERÍA EN ALMACÉN
+                                            </div>
+                                         )}
                                     </div>
                                 </div>
-                                
-                                <div className="p-6 pt-0 mt-auto">
-                                     {p.received === 'NO' && p.status !== 'CANCELADO' ? (
-                                        <button onClick={(e) => { e.stopPropagation(); onConfirmReception(p); }} className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:scale-[1.02] transition-all shadow-lg shadow-emerald-100">
-                                            <Package className="w-4 h-4"/> CARGAR STOCK
-                                        </button>
-                                     ) : (
-                                        <div className="w-full py-4 bg-slate-50 text-slate-400 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 border border-slate-100 cursor-default">
-                                            <ShieldCheck className="w-4 h-4 text-emerald-500"/> MERCADERÍA EN ALMACÉN
-                                        </div>
-                                     )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
 
             {/* MODAL MAESTRO DE COMPRA */}
