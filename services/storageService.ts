@@ -1,3 +1,4 @@
+
 import { UserProfile, Product, Transaction, Purchase, StoreSettings, Customer, Supplier, CashShift, CashMovement, Lead, Store, PaymentMethod, PurchaseItem } from '../types';
 import { supabase } from './supabase';
 import { DEFAULT_SETTINGS } from '../constants';
@@ -75,6 +76,7 @@ export const StorageService = {
   saveProducts: async (products: Product[]) => {
       const storeId = await getStoreId();
       for (const p of products) {
+          // Fix: Accessing p.packItems instead of incorrect p.pack_items (which doesn't exist on Product interface)
           await supabase.from('products').upsert({ 
               id: p.id, name: p.name, price: p.price, stock: p.stock, 
               category: p.category, barcode: p.barcode, variants: p.variants || [], 
@@ -347,7 +349,13 @@ export const StorageService = {
 
   saveSupplier: async (s: Supplier) => {
     const storeId = await getStoreId();
-    const { error } = await supabase.from('suppliers').upsert({ ...s, store_id: storeId });
+    // Ajustado para coincidir exactamente con la estructura de tabla proporcionada por el usuario
+    const { error } = await supabase.from('suppliers').upsert({ 
+        id: s.id, 
+        name: s.name, 
+        contact: s.contact || s.phone || '', // Mapeamos contacto o teléfono al campo contact de la BD
+        store_id: storeId 
+    });
     if (error) throw error;
   },
 
