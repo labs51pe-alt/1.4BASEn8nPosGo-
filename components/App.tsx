@@ -1,4 +1,3 @@
-
 import { ViewState, Product, CartItem, Transaction, StoreSettings, Purchase, CashShift, CashMovement, UserProfile, Customer, Supplier, PackItem, PaymentDetail } from '../types';
 import { StorageService } from '../services/storageService';
 import { Layout } from './Layout';
@@ -111,7 +110,6 @@ const App: React.FC = () => {
             setUser(savedUser); 
             let initialView = ViewState.POS;
             if (savedUser.role === 'super_admin' || savedUser.id === 'god-mode') initialView = ViewState.SUPER_ADMIN;
-            // Default to POS for admin role
             else if (savedUser.role === 'admin') initialView = ViewState.POS;
             
             setView(initialView);
@@ -214,7 +212,6 @@ const App: React.FC = () => {
           shiftId: activeShift.id 
       };
 
-      // Cálculo preciso por método para el turno
       const cashInThisSale = payments.filter(p => p.method === 'cash').reduce((sum, p) => sum + p.amount, 0);
       const yapeInThisSale = payments.filter(p => p.method === 'yape').reduce((sum, p) => sum + p.amount, 0);
       const plinInThisSale = payments.filter(p => p.method === 'plin').reduce((sum, p) => sum + p.amount, 0);
@@ -439,6 +436,7 @@ const App: React.FC = () => {
                 onRevertReception={handleRevertReception}
                 onAddSupplier={async (s) => { try { await StorageService.saveSupplier(s); await refreshAllData(); } catch(e:any){ alert("Error:\n" + (e?.message || "Fallo al guardar")); } }} 
                 onRequestNewProduct={(barcode) => { setCurrentProduct({ id: '', name: '', price: 0, category: CATEGORIES[0], stock: 0, variants: [], packItems: [], barcode: barcode || '', images: [], isPack: false, hasVariants: false }); setIsProductModalOpen(true); }} 
+                onEditProduct={(p) => { setCurrentProduct({ ...p, variants: p.variants || [], packItems: p.packItems || [], images: p.images || [] }); setIsProductModalOpen(true); }}
                 initialSearchTerm={initialPurchaseSearch} 
                 onClearInitialSearch={() => setInitialPurchaseSearch('')} 
               />

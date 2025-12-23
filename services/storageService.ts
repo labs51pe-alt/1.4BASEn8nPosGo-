@@ -1,4 +1,3 @@
-
 import { UserProfile, Product, Transaction, Purchase, StoreSettings, Customer, Supplier, CashShift, CashMovement, Lead, Store, PaymentMethod, PurchaseItem } from '../types';
 import { supabase } from './supabase';
 import { DEFAULT_SETTINGS } from '../constants';
@@ -64,7 +63,6 @@ export const StorageService = {
     return productsData.map((p: any) => ({ 
         id: p.id, name: p.name, price: Number(p.price), category: p.category, 
         stock: Number(p.stock), barcode: p.barcode, 
-        has_variants: p.has_variants, 
         hasVariants: p.has_variants,
         variants: Array.isArray(p.variants) ? p.variants : [], 
         images: imagesData ? imagesData.filter((img: any) => img.product_id === p.id).map((img: any) => img.image_data) : [], 
@@ -252,14 +250,12 @@ export const StorageService = {
             let variants = Array.isArray(p.variants) ? p.variants : [];
             let currentPrice = p.price;
 
-            // Si es una variante, la actualizamos específicamente
             if (item.variantId) {
-                const vIdx = variants.findIndex(v => v.id === item.variantId);
+                const vIdx = variants.findIndex((v: any) => v.id === item.variantId);
                 if (vIdx !== -1) {
                     variants[vIdx].stock = (variants[vIdx].stock || 0) + item.quantity;
                     variants[vIdx].price = item.newSellPrice || variants[vIdx].price;
                 } else if (item.variantName) {
-                    // Si no existe pero se definió en la compra (On-the-fly)
                     variants.push({
                         id: item.variantId,
                         name: item.variantName,
@@ -267,8 +263,7 @@ export const StorageService = {
                         stock: item.quantity
                     });
                 }
-                // Si hay variantes, el stock total del producto es la suma de todas
-                newStock = variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+                newStock = variants.reduce((sum: number, v: any) => sum + (Number(v.stock) || 0), 0);
             } else {
                 currentPrice = item.newSellPrice || p.price;
             }
@@ -294,11 +289,11 @@ export const StorageService = {
             let newStock = Math.max(0, Number(p.stock) - item.quantity);
             
             if (item.variantId) {
-                const vIdx = variants.findIndex(v => v.id === item.variantId);
+                const vIdx = variants.findIndex((v: any) => v.id === item.variantId);
                 if (vIdx !== -1) {
-                    variants[vIdx].stock = Math.max(0, (variants[vIdx].stock || 0) - item.quantity);
+                    variants[vIdx].stock = Math.max(0, (Number(variants[vIdx].stock) || 0) - item.quantity);
                 }
-                newStock = variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+                newStock = variants.reduce((sum: number, v: any) => sum + (Number(v.stock) || 0), 0);
             }
             
             await supabase.from('products').update({ stock: newStock, variants }).eq('id', p.id).eq('store_id', storeId);
